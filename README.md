@@ -19,7 +19,17 @@ communication cost, compute time, and GPU memory.
 - **CIFAR-100** — 100-class image classification (32×32)
 - **Tiny-ImageNet-200** — 200-class image classification (64×64)
 
-Tiny-ImageNet-200 must be downloaded manually and placed at `data/tiny-imagenet-200/`.
+Tiny-ImageNet-200 must be downloaded manually and placed at `data/tiny-imagenet-200/`. 
+To download and extract it, run the following commands in the terminal from the project root:
+
+# Download
+!wget http://cs231n.stanford.edu/tiny-imagenet-200.zip
+
+# Extract into ./data/
+!unzip -q tiny-imagenet-200.zip -d ./data/
+
+# Verify
+!ls ./data/tiny-imagenet-200/
 
 ## Model
 
