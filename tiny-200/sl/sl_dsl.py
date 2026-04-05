@@ -986,7 +986,7 @@ if __name__ == "__main__":
 
     reset_env()
 
-    clients, test = get_tiny_imagenet_loaders(num_clients=10, batch_size=128)
+    clients, test = get_tiny_imagenet_loaders(num_clients=10, batch_size=128,alpha=0.5)
 
     tracker = MetricsTracker("DGL_1_10", log_path)
 
@@ -1002,7 +1002,7 @@ if __name__ == "__main__":
 
     # 3. DGL 1:5
     reset_env()
-    clients, test = get_tiny_imagenet_loaders(num_clients=5, batch_size=128)
+    clients, test = get_tiny_imagenet_loaders(num_clients=5, batch_size=128,alpha=0.5)
     tracker = MetricsTracker("DGL_1_5", log_path)
     train_dgl(clients, test, num_splits, tracker=tracker)
 
@@ -1015,7 +1015,7 @@ if __name__ == "__main__":
 
     reset_env()
 
-    clients, test = get_tiny_imagenet_loaders(num_clients=1, batch_size=128)
+    clients, test = get_tiny_imagenet_loaders(num_clients=1, batch_size=128,alpha=0.5)
 
     tracker = MetricsTracker("DGL_1_1", log_path)
 
