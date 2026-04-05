@@ -455,7 +455,7 @@ def evaluate(model, test_loader):
 # remains the same as SFLV1.
 # ==========================================
 
-ROUNDS = 50
+ROUNDS = 200
 LOCAL_EPOCHS = 5
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
