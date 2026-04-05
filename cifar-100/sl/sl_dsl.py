@@ -442,7 +442,6 @@ def get_cifar100_loaders(num_clients, batch_size, alpha=None):  # <-- alpha adde
 
     # ============================================================
     # INDEX ASSIGNMENT — IID path stays exactly as it was.
-    # Dirichlet path is the only new code.
     # ============================================================
     if alpha is None:
         # ORIGINAL stratified IID split

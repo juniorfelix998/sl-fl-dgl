@@ -361,7 +361,6 @@ def get_tiny_imagenet_loaders(num_clients, batch_size, data_dir=None, alpha=None
 
     # ============================================================
     # INDEX ASSIGNMENT — IID path is stratified (matches CIFAR).
-    # Dirichlet path is the only new code.
     # ============================================================
     if alpha is None:
         # --- Stratified IID split ---

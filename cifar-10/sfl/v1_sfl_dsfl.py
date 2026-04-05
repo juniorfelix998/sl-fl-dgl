@@ -334,7 +334,6 @@ def get_cifar10_loaders(num_clients, batch_size, alpha=None):
 
     # ============================================================
     # INDEX ASSIGNMENT — IID path upgraded to stratified split.
-    # Dirichlet path is the only new code.
     # ============================================================
     if alpha is None:
         # --- Stratified IID split (matches CIFAR standard) ---
