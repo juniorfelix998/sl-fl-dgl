@@ -254,7 +254,7 @@ class rep(nn.Module):
 
 
 class Net(nn.Module):
-    def __init__(self, depth=110, num_classes=200, num_splits=2):
+    def __init__(self, depth=110, num_classes=200, num_splits=4):
         super(Net, self).__init__()
 
         self.blocks = nn.ModuleList([])
@@ -412,7 +412,7 @@ class MetricsTracker:
 def get_tiny_imagenet_loaders(num_clients, batch_size, data_dir=None, alpha=None):
     if data_dir is None:
         data_dir = os.path.join(
-            os.path.dirname(__file__), "..", "..", "data", "tiny-imagenet-200"
+            os.path.dirname(__file__), "../..", "..", "data", "tiny-imagenet-200"
         )
     transform_train = transforms.Compose(
         [
@@ -539,7 +539,7 @@ def reset_env():
 # ==========================================
 
 
-EPOCHS = 200  # Increased slightly for better visualization
+EPOCHS = 250  # Increased slightly for better visualization
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -971,8 +971,8 @@ def generate_visualizations(log_file="logs/experiment_results.csv"):
 
 
 if __name__ == "__main__":
-    if not os.path.exists("logs"):
-        os.makedirs("logs")
+    if not os.path.exists("../logs"):
+        os.makedirs("../logs")
 
     log_path = "logs/experiment_results.csv"
 
@@ -981,7 +981,7 @@ if __name__ == "__main__":
     if os.path.exists(log_path):
         os.remove(log_path)
 
-    num_splits = 2
+    num_splits = 4
     # 1. DGL 1:10
 
     reset_env()

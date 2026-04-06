@@ -9,6 +9,7 @@ import os
 import copy
 import time
 import itertools
+import random
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -16,7 +17,7 @@ import seaborn as sns
 
 # ==========================================
 # --- PART 1: Model Architectures ---
-# (Shared by both SFLV1 and DSFL)
+# (Shared by both SFLV2 and DSFLV2)
 # ==========================================
 
 
@@ -182,7 +183,7 @@ class rep(nn.Module):
 
 
 class Net(nn.Module):
-    def __init__(self, depth=110, num_classes=100, num_splits=2):
+    def __init__(self, depth=110, num_classes=10, num_splits=3):
         super(Net, self).__init__()
         self.blocks = nn.ModuleList([])
         self.auxillary_nets = nn.ModuleList([])
@@ -230,7 +231,7 @@ class Net(nn.Module):
 
 # ==========================================
 # --- PART 2: Utils and Metrics ---
-# (Shared by both SFLV1 and DSFL)
+# (Shared by both SFLV2 and DSFLV2)
 # ==========================================
 
 
@@ -299,30 +300,29 @@ class MetricsTracker:
         )
 
 
-def get_cifar100_loaders(num_clients, batch_size, alpha=None):
+def get_cifar10_loaders(num_clients, batch_size, alpha=None):
     transform_train = transforms.Compose(
         [
             transforms.RandomCrop(32, padding=4),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
-            transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
         ]
     )
     transform_test = transforms.Compose(
         [
             transforms.ToTensor(),
-            transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
         ]
     )
 
-    trainset = datasets.CIFAR100(
+    trainset = datasets.CIFAR10(
         root="./data", train=True, download=True, transform=transform_train
     )
-    testset = datasets.CIFAR100(
+    testset = datasets.CIFAR10(
         root="./data", train=False, download=True, transform=transform_test
     )
 
-    # Stratified split: each client gets equal samples per class
     targets = np.array(trainset.targets)
     class_indices = {}
     for idx in range(len(trainset)):
@@ -334,10 +334,10 @@ def get_cifar100_loaders(num_clients, batch_size, alpha=None):
     client_indices = [[] for _ in range(num_clients)]
 
     # ============================================================
-    # INDEX ASSIGNMENT — IID path stays exactly as it was.
+    # INDEX ASSIGNMENT — IID path upgraded to stratified split.
     # ============================================================
     if alpha is None:
-        # --- ORIGINAL stratified IID split (UNCHANGED) ---
+        # --- Stratified IID split (matches CIFAR standard) ---
         for label in sorted(class_indices.keys()):
             idxs = class_indices[label]
             np.random.shuffle(idxs)
@@ -368,8 +368,7 @@ def get_cifar100_loaders(num_clients, batch_size, alpha=None):
 
     test_loader = torch.utils.data.DataLoader(testset, batch_size=128, shuffle=False)
 
-    split_size = len(client_indices[0])
-    print(f"Dataset: Cifar 100 | Images/Client: {split_size}")
+    print(f"Dataset: Cifar 10 | Images/Client: {len(client_indices[0])}")
     return client_loaders, test_loader
 
 
@@ -419,24 +418,29 @@ def evaluate(model, test_loader):
 
 
 # ==========================================
-# --- PART 3A: SFLV1 Training Logic ---
-# Standard SplitFed with end-to-end backprop
-# through the cut layer.
+# --- PART 3A: SFLV2 Training Logic ---
+# Server-side model is shared (single copy),
+# updated in-place sequentially per client.
+# No server-side FedAvg. Client-side FedAvg
+# remains the same as SFLV1.
 # ==========================================
 
-ROUNDS = 50
+ROUNDS = 250
 LOCAL_EPOCHS = 5
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def train_sflv1(client_loaders, test_loader, num_splits, tracker):
+def train_sflv2(client_loaders, test_loader, num_splits, tracker):
     """
-    SplitFed Learning V1 (SFLV1).
-    End-to-end backpropagation through the cut layer.
+    SplitFed Learning V2 (SFLV2).
+    Server-side model is a single shared instance updated sequentially
+    by each client's smashed data (no server-side FedAvg).
+    Client order is randomized each round.
+    Client-side FedAvg is applied as in SFLV1.
     Communication: forward activations + backward gradients.
     """
     num_clients = len(client_loaders)
-    global_model = Net(depth=110, num_classes=100, num_splits=num_splits).to(DEVICE)
+    global_model = Net(depth=110, num_classes=10, num_splits=num_splits).to(DEVICE)
     criterion = nn.CrossEntropyLoss()
 
     with torch.no_grad():
@@ -455,37 +459,41 @@ def train_sflv1(client_loaders, test_loader, num_splits, tracker):
         else:
             server_side_keys.add(k)
 
-    print(f"\n--- Starting SFLV1 | Clients: {num_clients} | Splits: {num_splits} ---")
+    print(f"\n--- Starting SFLV2 | Clients: {num_clients} | Splits: {num_splits} ---")
     print(
         f"    Client-side keys: {len(client_side_keys)} | Server-side keys: {len(server_side_keys)}"
     )
+    print(f"    Server-side FedAvg: NONE (single model, sequential updates)")
 
     for round_num in range(1, ROUNDS + 1):
         tracker.reset()
         start_time_epoch = time.time()
 
         w_client_side_all = []
-        w_server_side_all = []
 
         total_loss = 0
         total_acc = 0
         total_samples = 0
 
-        for client_id, loader in enumerate(client_loaders):
+        client_order = list(range(num_clients))
+        random.shuffle(client_order)
+
+        server_params = []
+        for s in range(1, num_splits):
+            server_params += list(global_model.blocks[s].parameters())
+        server_params += list(global_model.auxillary_nets[-1].parameters())
+        opt_server = optim.SGD(server_params, lr=0.001, momentum=0.9, weight_decay=1e-4)
+
+        for client_id in client_order:
+            loader = client_loaders[client_id]
+
             local_model = copy.deepcopy(global_model)
             local_model.train()
+            global_model.train()
 
             client_params = list(local_model.blocks[0].parameters())
-            server_params = []
-            for s in range(1, num_splits):
-                server_params += list(local_model.blocks[s].parameters())
-            server_params += list(local_model.auxillary_nets[-1].parameters())
-
             opt_client = optim.SGD(
                 client_params, lr=0.001, momentum=0.9, weight_decay=1e-4
-            )
-            opt_server = optim.SGD(
-                server_params, lr=0.001, momentum=0.9, weight_decay=1e-4
             )
 
             for local_ep in range(LOCAL_EPOCHS):
@@ -502,17 +510,17 @@ def train_sflv1(client_loaders, test_loader, num_splits, tracker):
                     tracker.client_time_fwd += time.time() - t0
                     tracker.log_comm(client_out, "fwd")
 
-                    # --- SERVER FORWARD ---
+                    # --- SERVER FORWARD (global_model, shared single instance) ---
                     t1 = time.time()
                     server_out = client_out_var
                     for s in range(1, num_splits):
-                        server_out = local_model.blocks[s](server_out)
+                        server_out = global_model.blocks[s](server_out)
                     server_out_flat = server_out.view(server_out.size(0), -1)
-                    final_pred = local_model.auxillary_nets[-1](server_out_flat)
+                    final_pred = global_model.auxillary_nets[-1](server_out_flat)
                     loss = criterion(final_pred, target)
                     tracker.server_time_fwd += time.time() - t1
 
-                    # --- SERVER BACKWARD ---
+                    # --- SERVER BACKWARD (updates global_model in-place) ---
                     t2 = time.time()
                     loss.backward()
                     grad_at_cut = client_out_var.grad
@@ -533,14 +541,11 @@ def train_sflv1(client_loaders, test_loader, num_splits, tracker):
 
             local_sd = local_model.state_dict()
             w_client_side_all.append({k: local_sd[k].clone() for k in client_side_keys})
-            w_server_side_all.append({k: local_sd[k].clone() for k in server_side_keys})
 
         w_avg_client = FedAvg(w_client_side_all)
-        w_avg_server = FedAvg(w_server_side_all)
 
         global_sd = global_model.state_dict()
         global_sd.update(w_avg_client)
-        global_sd.update(w_avg_server)
         global_model.load_state_dict(global_sd)
 
         tracker.training_time = time.time() - start_time_epoch
@@ -551,22 +556,25 @@ def train_sflv1(client_loaders, test_loader, num_splits, tracker):
 
 
 # ==========================================
-# --- PART 3B: DSFL Training Logic ---
-# Decoupled SplitFed: client trains block 0
+# --- PART 3B: DSFLV2 Training Logic ---
+# Decoupled SplitFed V2: client trains block 0
 # with local auxiliary head (greedy, BP-free).
-# No backward communication.
+# Server uses single shared model, updated
+# sequentially. No backward communication.
+# No server-side FedAvg.
 # ==========================================
 
 
-def train_dsfl(client_loaders, test_loader, num_splits, tracker):
+def train_dsflv2(client_loaders, test_loader, num_splits, tracker):
     """
-    Decoupled SplitFed Learning (DSFL).
+    Decoupled SplitFed Learning V2 (DSFLV2).
     Client trains block 0 + aux[0] with greedy local loss (DGL-style).
-    Server trains blocks 1..N-1 + final classifier on detached activations.
+    Server trains blocks 1..N-1 + final classifier on detached activations,
+    using a single shared model updated sequentially (no server-side FedAvg).
     Communication: forward activations ONLY.
     """
     num_clients = len(client_loaders)
-    global_model = Net(depth=110, num_classes=100, num_splits=num_splits).to(DEVICE)
+    global_model = Net(depth=110, num_classes=10, num_splits=num_splits).to(DEVICE)
     criterion = nn.CrossEntropyLoss()
 
     with torch.no_grad():
@@ -594,26 +602,38 @@ def train_dsfl(client_loaders, test_loader, num_splits, tracker):
         else:
             server_side_keys.add(k)
 
-    print(f"\n--- Starting DSFL | Clients: {num_clients} | Splits: {num_splits} ---")
+    print(f"\n--- Starting DSFLV2 | Clients: {num_clients} | Splits: {num_splits} ---")
     print(
         f"    Client-side keys: {len(client_side_keys)} | Server-side keys: {len(server_side_keys)}"
     )
     print(f"    Backward communication: NONE (fully decoupled)")
+    print(f"    Server-side FedAvg: NONE (single model, sequential updates)")
 
     for round_num in range(1, ROUNDS + 1):
         tracker.reset()
         start_time_epoch = time.time()
 
         w_client_side_all = []
-        w_server_side_all = []
 
         total_loss = 0
         total_acc = 0
         total_samples = 0
 
-        for client_id, loader in enumerate(client_loaders):
+        client_order = list(range(num_clients))
+        random.shuffle(client_order)
+
+        server_params = []
+        for s in range(1, num_splits):
+            server_params += list(global_model.blocks[s].parameters())
+        server_params += list(global_model.auxillary_nets[-1].parameters())
+        opt_server = optim.SGD(server_params, lr=0.001, momentum=0.9, weight_decay=1e-4)
+
+        for client_id in client_order:
+            loader = client_loaders[client_id]
+
             local_model = copy.deepcopy(global_model)
             local_model.train()
+            global_model.train()
 
             client_params = list(
                 itertools.chain(
@@ -621,16 +641,8 @@ def train_dsfl(client_loaders, test_loader, num_splits, tracker):
                     local_model.auxillary_nets[0].parameters(),
                 )
             )
-            server_params = []
-            for s in range(1, num_splits):
-                server_params += list(local_model.blocks[s].parameters())
-            server_params += list(local_model.auxillary_nets[-1].parameters())
-
             opt_client = optim.SGD(
                 client_params, lr=0.001, momentum=0.9, weight_decay=1e-4
-            )
-            opt_server = optim.SGD(
-                server_params, lr=0.001, momentum=0.9, weight_decay=1e-4
             )
 
             for local_ep in range(LOCAL_EPOCHS):
@@ -653,16 +665,16 @@ def train_dsfl(client_loaders, test_loader, num_splits, tracker):
 
                     tracker.log_comm(client_out, "fwd")
 
-                    # --- SERVER SIDE: Standard training on detached input ---
+                    # --- SERVER SIDE: Training on detached input (global_model, shared) ---
                     opt_server.zero_grad()
 
                     t2 = time.time()
                     server_input = client_out.detach()
                     server_out = server_input
                     for s in range(1, num_splits):
-                        server_out = local_model.blocks[s](server_out)
+                        server_out = global_model.blocks[s](server_out)
                     server_out_flat = server_out.view(server_out.size(0), -1)
-                    final_pred = local_model.auxillary_nets[-1](server_out_flat)
+                    final_pred = global_model.auxillary_nets[-1](server_out_flat)
                     server_loss = criterion(final_pred, target)
                     tracker.server_time_fwd += time.time() - t2
 
@@ -677,14 +689,11 @@ def train_dsfl(client_loaders, test_loader, num_splits, tracker):
 
             local_sd = local_model.state_dict()
             w_client_side_all.append({k: local_sd[k].clone() for k in client_side_keys})
-            w_server_side_all.append({k: local_sd[k].clone() for k in server_side_keys})
 
         w_avg_client = FedAvg(w_client_side_all)
-        w_avg_server = FedAvg(w_server_side_all)
 
         global_sd = global_model.state_dict()
         global_sd.update(w_avg_client)
-        global_sd.update(w_avg_server)
         global_model.load_state_dict(global_sd)
 
         tracker.training_time = time.time() - start_time_epoch
@@ -697,7 +706,7 @@ def train_dsfl(client_loaders, test_loader, num_splits, tracker):
 # ==========================================
 # --- PART 4: Comparative Visualization ---
 # Generates side-by-side and overlay plots
-# comparing SFLV1 vs DSFL across all metrics.
+# comparing SFLV2 vs DSFLV2 across all metrics.
 # ==========================================
 
 
@@ -707,7 +716,7 @@ def generate_comparison_visualizations(log_file):
         os.makedirs("logs/plots")
 
     df["Method"] = df["Scenario"].apply(
-        lambda s: "SFLV1" if s.startswith("SFLV1") else "DSFL"
+        lambda s: "SFLV2" if s.startswith("SFLV2") else "DSFLV2"
     )
     df["Clients"] = df["Scenario"].apply(lambda s: s.split("_")[-1])
 
@@ -716,7 +725,7 @@ def generate_comparison_visualizations(log_file):
     sns.lineplot(
         data=df, x="Epoch", y="TestAcc", hue="Scenario", style="Method", markers=True
     )
-    plt.title("SFLV1 vs DSFL - Test Accuracy Convergence")
+    plt.title("SFLV2 vs DSFLV2 - Test Accuracy Convergence")
     plt.ylabel("Test Accuracy (%)")
     plt.grid(True)
     plt.legend(fontsize=8)
@@ -729,7 +738,7 @@ def generate_comparison_visualizations(log_file):
     sns.lineplot(
         data=df, x="Epoch", y="TrainAcc", hue="Scenario", style="Method", markers=True
     )
-    plt.title("SFLV1 vs DSFL - Training Accuracy Convergence")
+    plt.title("SFLV2 vs DSFLV2 - Training Accuracy Convergence")
     plt.ylabel("Training Accuracy (%)")
     plt.grid(True)
     plt.legend(fontsize=8)
@@ -742,7 +751,7 @@ def generate_comparison_visualizations(log_file):
     sns.lineplot(
         data=df, x="Epoch", y="Loss", hue="Scenario", style="Method", markers=True
     )
-    plt.title("SFLV1 vs DSFL - Loss Convergence")
+    plt.title("SFLV2 vs DSFLV2 - Loss Convergence")
     plt.ylabel("Loss")
     plt.grid(True)
     plt.legend(fontsize=8)
@@ -754,7 +763,7 @@ def generate_comparison_visualizations(log_file):
     peak_acc = df.groupby(["Method", "Clients"])["TestAcc"].max().reset_index()
     plt.figure(figsize=(10, 6))
     sns.barplot(data=peak_acc, x="Clients", y="TestAcc", hue="Method")
-    plt.title("SFLV1 vs DSFL - Peak Test Accuracy by Client Count")
+    plt.title("SFLV2 vs DSFLV2 - Peak Test Accuracy by Client Count")
     plt.ylabel("Peak Test Accuracy (%)")
     plt.xlabel("Number of Clients")
     plt.tight_layout()
@@ -768,7 +777,7 @@ def generate_comparison_visualizations(log_file):
     )
     plt.figure(figsize=(10, 6))
     sns.barplot(data=comm_per_epoch, x="Clients", y="TotalCommMB", hue="Method")
-    plt.title("SFLV1 vs DSFL - Avg Communication Volume per Epoch (MB)")
+    plt.title("SFLV2 vs DSFLV2 - Avg Communication Volume per Epoch (MB)")
     plt.ylabel("Communication (MB)")
     plt.xlabel("Number of Clients")
     plt.tight_layout()
@@ -807,14 +816,14 @@ def generate_comparison_visualizations(log_file):
         height=5,
         aspect=1.2,
     )
-    g.fig.suptitle("SFLV1 vs DSFL - Fwd vs Bwd Communication", y=1.02)
+    g.fig.suptitle("SFLV2 vs DSFLV2 - Fwd vs Bwd Communication", y=1.02)
     g.savefig("logs/plots/compare_comm_fwd_bwd.png")
     plt.close("all")
 
     # --- 7. Total Time per Epoch (boxplot) ---
     plt.figure(figsize=(12, 6))
     sns.boxplot(data=df, x="Clients", y="TotalTime", hue="Method")
-    plt.title("SFLV1 vs DSFL - Time per Epoch Distribution")
+    plt.title("SFLV2 vs DSFLV2 - Time per Epoch Distribution")
     plt.ylabel("Time (s)")
     plt.xlabel("Number of Clients")
     plt.tight_layout()
@@ -836,7 +845,7 @@ def generate_comparison_visualizations(log_file):
         figsize=(14, 6),
         color=["#2196F3", "#64B5F6", "#FF5722", "#FF8A65", "#9E9E9E"],
     )
-    plt.title("SFLV1 vs DSFL - Compute Time Breakdown per Epoch")
+    plt.title("SFLV2 vs DSFLV2 - Compute Time Breakdown per Epoch")
     plt.ylabel("Time (s)")
     plt.xlabel("Scenario")
     plt.legend(
@@ -855,7 +864,7 @@ def generate_comparison_visualizations(log_file):
     sns.barplot(
         data=mem_summary, x="Clients", y="PeakGPUMemMB", hue="Method", palette="viridis"
     )
-    plt.title("SFLV1 vs DSFL - Peak GPU Memory")
+    plt.title("SFLV2 vs DSFLV2 - Peak GPU Memory")
     plt.ylabel("Peak GPU Memory (MB)")
     plt.xlabel("Number of Clients")
     plt.tight_layout()
@@ -864,7 +873,7 @@ def generate_comparison_visualizations(log_file):
 
     # --- 10. Final Summary Table ---
     print("\n" + "=" * 80)
-    print("  SFLV1 vs DSFL -- COMPARATIVE SUMMARY")
+    print("  SFLV2 vs DSFLV2 -- COMPARATIVE SUMMARY")
     print("=" * 80)
     table_stats = (
         df.groupby("Scenario")
@@ -902,7 +911,7 @@ def generate_comparison_visualizations(log_file):
         )
     )
     print(table_stats.to_string())
-    table_stats.to_csv("logs/sflv1_vs_dsfl_summary.csv")
+    table_stats.to_csv("logs/sflv2_vs_dsflv2_summary.csv")
 
     comm_stats = df.groupby("Scenario").agg(
         {
@@ -924,16 +933,16 @@ def generate_comparison_visualizations(log_file):
     ) / 1e6
     print("\n--- Communication Comparison ---")
     print(comm_stats.to_string())
-    comm_stats.to_csv("logs/sflv1_vs_dsfl_comm.csv")
+    comm_stats.to_csv("logs/sflv2_vs_dsflv2_comm.csv")
 
     print(f"\nAll comparison plots saved to: logs/plots/")
-    print(f"Summary CSV: logs/sflv1_vs_dsfl_summary.csv")
-    print(f"Comm CSV:    logs/sflv1_vs_dsfl_comm.csv")
+    print(f"Summary CSV: logs/sflv2_vs_dsflv2_summary.csv")
+    print(f"Comm CSV:    logs/sflv2_vs_dsflv2_comm.csv")
 
 
 # ==========================================
 # --- PART 5: Main Execution ---
-# Runs SFLV1 and DSFL for each client count,
+# Runs SFLV2 and DSFLV2 for each client count,
 # writing to a single shared CSV, then
 # generates comparative visualizations.
 # ==========================================
@@ -941,29 +950,29 @@ def generate_comparison_visualizations(log_file):
 if __name__ == "__main__":
     if not os.path.exists("logs"):
         os.makedirs("logs")
-    log_path = "logs/sflv1_vs_dsfl_results.csv"
+    log_path = "logs/sflv2_vs_dsflv2_results.csv"
 
     if os.path.exists(log_path):
         os.remove(log_path)
 
-    num_splits = 2
+    num_splits = 3
 
     for num_clients in [10, 5, 1]:
-        # --- SFLV1 ---
+        # --- SFLV2 ---
         reset_env()
-        clients, test = get_cifar100_loaders(
+        clients, test = get_cifar10_loaders(
             num_clients=num_clients, batch_size=128, alpha=0.5
         )
-        tracker = MetricsTracker(f"SFLV1_1_{num_clients}", log_path)
-        train_sflv1(clients, test, num_splits, tracker=tracker)
+        tracker = MetricsTracker(f"SFLV2_1_{num_clients}", log_path)
+        train_sflv2(clients, test, num_splits, tracker=tracker)
 
-        # --- DSFL ---
+        # --- DSFLV2 ---
         reset_env()
-        clients, test = get_cifar100_loaders(
+        clients, test = get_cifar10_loaders(
             num_clients=num_clients, batch_size=128, alpha=0.5
         )
-        tracker = MetricsTracker(f"DSFL_1_{num_clients}", log_path)
-        train_dsfl(clients, test, num_splits, tracker=tracker)
+        tracker = MetricsTracker(f"DSFLV2_1_{num_clients}", log_path)
+        train_dsflv2(clients, test, num_splits, tracker=tracker)
 
     print("\n" + "=" * 60)
     print("  All training completed. Generating comparison plots...")

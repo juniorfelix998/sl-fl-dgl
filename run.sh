@@ -22,18 +22,36 @@ run() {
 }
 
 # CIFAR-10
-run cifar-10/sl/sl_dsl.py
-run cifar-10/sfl/v1_sfl_dsfl.py
-run cifar-10/sfl/v2_sfl_dsfl.py
+run cifar-10/sl/split-2/sl_dsl.py
+run cifar-10/sl/split-3/sl_dsl.py
+run cifar-10/sl/split-4/sl_dsl.py
+run cifar-10/sfl/split-2/v1/v1_sfl_dsfl.py
+run cifar-10/sfl/split-2/v2/v2_sfl_dsfl.py
+run cifar-10/sfl/split-3/v1/v1_sfl_dsfl.py
+run cifar-10/sfl/split-3/v2/v2_sfl_dsfl.py
+run cifar-10/sfl/split-4/v1/v1_sfl_dsfl.py
+run cifar-10/sfl/split-4/v2/v2_sfl_dsfl.py
 
 # CIFAR-100
-run cifar-100/sl/sl_dsl.py
-run cifar-100/sfl/v1_sfl_dsfl.py
-run cifar-100/sfl/v2_sfl_dsfl.py
+run cifar-100/sl/split-2/sl_dsl.py
+run cifar-100/sl/split-3/sl_dsl.py
+run cifar-100/sl/split-4/sl_dsl.py
+run cifar-100/sfl/split-2/v1/v1_sfl_dsfl.py
+run cifar-100/sfl/split-2/v2/v2_sfl_dsfl.py
+run cifar-100/sfl/split-3/v1/v1_sfl_dsfl.py
+run cifar-100/sfl/split-3/v2/v2_sfl_dsfl.py
+run cifar-100/sfl/split-4/v1/v1_sfl_dsfl.py
+run cifar-100/sfl/split-4/v2/v2_sfl_dsfl.py
 
 # Tiny-ImageNet-200
-run tiny-200/sl/sl_dsl.py
-run tiny-200/sfl/v1_sfl_dsfl.py
-run tiny-200/sfl/v2_sfl_dsfl.py
+run tiny-200/sl/split-2/sl_dsl.py
+run tiny-200/sl/split-3/sl_dsl.py
+run tiny-200/sl/split-4/sl_dsl.py
+run tiny-200/sfl/split-2/v1/v1_sfl_dsfl.py
+run tiny-200/sfl/split-2/v2/v2_sfl_dsfl.py
+run tiny-200/sfl/split-3/v1/v1_sfl_dsfl.py
+run tiny-200/sfl/split-3/v2/v2_sfl_dsfl.py
+run tiny-200/sfl/split-4/v1/v1_sfl_dsfl.py
+run tiny-200/sfl/split-4/v2/v2_sfl_dsfl.py
 
 echo "All runs completed."

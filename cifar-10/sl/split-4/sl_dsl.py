@@ -252,7 +252,7 @@ class rep(nn.Module):
 
 
 class Net(nn.Module):
-    def __init__(self, depth=110, num_classes=10, num_splits=2):
+    def __init__(self, depth=110, num_classes=10, num_splits=4):
         super(Net, self).__init__()
 
         self.blocks = nn.ModuleList([])
@@ -515,7 +515,7 @@ def reset_env():
 # ==========================================
 
 
-EPOCHS = 50  # Increased slightly for better visualization
+EPOCHS = 250  # Increased slightly for better visualization
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -954,7 +954,7 @@ if __name__ == "__main__":
     if os.path.exists(log_path):
         os.remove(log_path)
 
-    num_splits = 2
+    num_splits = 4
     # 1. DGL 1:10
 
     reset_env()

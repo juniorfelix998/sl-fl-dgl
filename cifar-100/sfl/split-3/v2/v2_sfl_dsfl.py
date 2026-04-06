@@ -183,7 +183,7 @@ class rep(nn.Module):
 
 
 class Net(nn.Module):
-    def __init__(self, depth=110, num_classes=10, num_splits=2):
+    def __init__(self, depth=110, num_classes=10, num_splits=3):
         super(Net, self).__init__()
         self.blocks = nn.ModuleList([])
         self.auxillary_nets = nn.ModuleList([])
@@ -300,26 +300,26 @@ class MetricsTracker:
         )
 
 
-def get_cifar10_loaders(num_clients, batch_size, alpha=None):
+def get_cifar100_loaders(num_clients, batch_size, alpha=None):
     transform_train = transforms.Compose(
         [
             transforms.RandomCrop(32, padding=4),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+            transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)),
         ]
     )
     transform_test = transforms.Compose(
         [
             transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+            transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)),
         ]
     )
 
-    trainset = datasets.CIFAR10(
+    trainset = datasets.CIFAR100(
         root="./data", train=True, download=True, transform=transform_train
     )
-    testset = datasets.CIFAR10(
+    testset = datasets.CIFAR100(
         root="./data", train=False, download=True, transform=transform_test
     )
 
@@ -368,7 +368,7 @@ def get_cifar10_loaders(num_clients, batch_size, alpha=None):
 
     test_loader = torch.utils.data.DataLoader(testset, batch_size=128, shuffle=False)
 
-    print(f"Dataset: Cifar 10 | Images/Client: {len(client_indices[0])}")
+    print(f"Dataset: Cifar 100 | Images/Client: {len(client_indices[0])}")
     return client_loaders, test_loader
 
 
@@ -425,7 +425,7 @@ def evaluate(model, test_loader):
 # remains the same as SFLV1.
 # ==========================================
 
-ROUNDS = 50
+ROUNDS = 250
 LOCAL_EPOCHS = 5
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -440,7 +440,7 @@ def train_sflv2(client_loaders, test_loader, num_splits, tracker):
     Communication: forward activations + backward gradients.
     """
     num_clients = len(client_loaders)
-    global_model = Net(depth=110, num_classes=10, num_splits=num_splits).to(DEVICE)
+    global_model = Net(depth=110, num_classes=100, num_splits=num_splits).to(DEVICE)
     criterion = nn.CrossEntropyLoss()
 
     with torch.no_grad():
@@ -574,7 +574,7 @@ def train_dsflv2(client_loaders, test_loader, num_splits, tracker):
     Communication: forward activations ONLY.
     """
     num_clients = len(client_loaders)
-    global_model = Net(depth=110, num_classes=10, num_splits=num_splits).to(DEVICE)
+    global_model = Net(depth=110, num_classes=100, num_splits=num_splits).to(DEVICE)
     criterion = nn.CrossEntropyLoss()
 
     with torch.no_grad():
@@ -955,12 +955,12 @@ if __name__ == "__main__":
     if os.path.exists(log_path):
         os.remove(log_path)
 
-    num_splits = 2
+    num_splits = 3
 
     for num_clients in [10, 5, 1]:
         # --- SFLV2 ---
         reset_env()
-        clients, test = get_cifar10_loaders(
+        clients, test = get_cifar100_loaders(
             num_clients=num_clients, batch_size=128, alpha=0.5
         )
         tracker = MetricsTracker(f"SFLV2_1_{num_clients}", log_path)
@@ -968,7 +968,7 @@ if __name__ == "__main__":
 
         # --- DSFLV2 ---
         reset_env()
-        clients, test = get_cifar10_loaders(
+        clients, test = get_cifar100_loaders(
             num_clients=num_clients, batch_size=128, alpha=0.5
         )
         tracker = MetricsTracker(f"DSFLV2_1_{num_clients}", log_path)

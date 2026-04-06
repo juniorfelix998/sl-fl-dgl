@@ -182,7 +182,7 @@ class rep(nn.Module):
 
 
 class Net(nn.Module):
-    def __init__(self, depth=110, num_classes=10, num_splits=2):
+    def __init__(self, depth=110, num_classes=10, num_splits=3):
         super(Net, self).__init__()
         self.blocks = nn.ModuleList([])
         self.auxillary_nets = nn.ModuleList([])
@@ -299,56 +299,29 @@ class MetricsTracker:
         )
 
 
-def get_tiny_imagenet_loaders(num_clients, batch_size, data_dir=None, alpha=None):
-    if data_dir is None:
-        data_dir = os.path.join(
-            os.path.dirname(__file__), "..", "..", "data", "tiny-imagenet-200"
-        )
+def get_cifar10_loaders(num_clients, batch_size, alpha=None):
     transform_train = transforms.Compose(
         [
-            transforms.RandomCrop(64, padding=4),
+            transforms.RandomCrop(32, padding=4),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
-            transforms.Normalize((0.4802, 0.4481, 0.3975), (0.2770, 0.2691, 0.2821)),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
         ]
     )
     transform_test = transforms.Compose(
         [
             transforms.ToTensor(),
-            transforms.Normalize((0.4802, 0.4481, 0.3975), (0.2770, 0.2691, 0.2821)),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
         ]
     )
 
-    trainset = datasets.ImageFolder(
-        root=os.path.join(data_dir, "train"), transform=transform_train
+    trainset = datasets.CIFAR10(
+        root="./data", train=True, download=True, transform=transform_train
+    )
+    testset = datasets.CIFAR10(
+        root="./data", train=False, download=True, transform=transform_test
     )
 
-    # Tiny ImageNet val folder needs restructuring for ImageFolder to work
-    val_dir = os.path.join(data_dir, "val")
-    val_images_dir = os.path.join(val_dir, "images")
-    val_annotations = os.path.join(val_dir, "val_annotations.txt")
-
-    restructured_val_dir = os.path.join(data_dir, "val_restructured")
-    if not os.path.exists(restructured_val_dir):
-        print("Restructuring validation directory for ImageFolder compatibility...")
-        os.makedirs(restructured_val_dir)
-        with open(val_annotations, "r") as f:
-            for line in f.readlines():
-                parts = line.strip().split("\t")
-                img_file, class_name = parts[0], parts[1]
-                class_dir = os.path.join(restructured_val_dir, class_name)
-                os.makedirs(class_dir, exist_ok=True)
-                src = os.path.join(val_images_dir, img_file)
-                dst = os.path.join(class_dir, img_file)
-                if not os.path.exists(dst):
-                    import shutil
-
-                    shutil.copy(src, dst)
-        print("Validation directory restructured.")
-
-    testset = datasets.ImageFolder(root=restructured_val_dir, transform=transform_test)
-
-    # Build class_indices once — shared by both IID and Dirichlet paths
     targets = np.array(trainset.targets)
     class_indices = {}
     for idx in range(len(trainset)):
@@ -360,10 +333,10 @@ def get_tiny_imagenet_loaders(num_clients, batch_size, data_dir=None, alpha=None
     client_indices = [[] for _ in range(num_clients)]
 
     # ============================================================
-    # INDEX ASSIGNMENT — IID path is stratified (matches CIFAR).
+    # INDEX ASSIGNMENT — IID path upgraded to stratified split.
     # ============================================================
     if alpha is None:
-        # --- Stratified IID split ---
+        # --- Stratified IID split (matches CIFAR standard) ---
         for label in sorted(class_indices.keys()):
             idxs = class_indices[label]
             np.random.shuffle(idxs)
@@ -392,11 +365,9 @@ def get_tiny_imagenet_loaders(num_clients, batch_size, data_dir=None, alpha=None
         )
         client_loaders.append(loader)
 
-    test_loader = torch.utils.data.DataLoader(
-        testset, batch_size=128, shuffle=False, num_workers=2
-    )
+    test_loader = torch.utils.data.DataLoader(testset, batch_size=128, shuffle=False)
 
-    print(f"Dataset: Tiny ImageNet | Images/Client: {len(client_indices[0])}")
+    print(f"Dataset: Cifar 10 | Images/Client: {len(client_indices[0])}")
     return client_loaders, test_loader
 
 
@@ -451,7 +422,7 @@ def evaluate(model, test_loader):
 # through the cut layer.
 # ==========================================
 
-ROUNDS = 200
+ROUNDS = 250
 LOCAL_EPOCHS = 5
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -973,13 +944,12 @@ if __name__ == "__main__":
     if os.path.exists(log_path):
         os.remove(log_path)
 
-    num_splits = 2
+    num_splits = 3
 
     for num_clients in [10, 5, 1]:
         # --- SFLV1 ---
         reset_env()
-
-        clients, test = get_tiny_imagenet_loaders(
+        clients, test = get_cifar10_loaders(
             num_clients=num_clients, batch_size=128, alpha=0.5
         )
         tracker = MetricsTracker(f"SFLV1_1_{num_clients}", log_path)
@@ -987,7 +957,7 @@ if __name__ == "__main__":
 
         # --- DSFL ---
         reset_env()
-        clients, test = get_tiny_imagenet_loaders(
+        clients, test = get_cifar10_loaders(
             num_clients=num_clients, batch_size=128, alpha=0.5
         )
         tracker = MetricsTracker(f"DSFL_1_{num_clients}", log_path)
