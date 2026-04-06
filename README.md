@@ -9,9 +9,11 @@ communication cost, compute time, and GPU memory.
 
 | Script | Algorithm | Description |
 |---|---|---|
-| `sl_dsl.py` | **Standard SL** vs **DGL** | Standard Split Learning (single server-side backward pass) vs Decoupled Greedy Learning (each split trained independently with auxiliary classifiers) |
-| `v1_sfl_dsfl.py` | **SFLv1** vs **DSFL** | SplitFed Learning V1 (FedAvg on client-side weights) vs Decoupled SplitFed Learning |
-| `v2_sfl_dsfl.py` | **SFLv2** vs **DSFLv2** | SplitFed Learning V2 vs Decoupled SplitFed Learning V2 |
+| `sl/split-N/sl_dsl.py` | **Standard SL** vs **DGL** | Standard Split Learning (single server-side backward pass) vs Decoupled Greedy Learning (each split trained independently with auxiliary classifiers) |
+| `sfl/split-N/v1/v1_sfl_dsfl.py` | **SFLv1** vs **DSFL** | SplitFed Learning V1 (FedAvg on client-side weights) vs Decoupled SplitFed Learning |
+| `sfl/split-N/v2/v2_sfl_dsfl.py` | **SFLv2** vs **DSFLv2** | SplitFed Learning V2 vs Decoupled SplitFed Learning V2 |
+
+`N` denotes the number of model splits evaluated: **2, 3, 4**.
 
 ## Datasets
 
@@ -33,7 +35,7 @@ To download and extract it, run the following commands in the terminal from the 
 
 ## Model
 
-All experiments use a **ResNet-110** backbone split into 2 partitions. Each partition is assigned an auxiliary classifier head used for local loss computation. The final classifier head is shared across all splits.
+All experiments use a **ResNet-110** backbone. The network is partitioned into **2, 3, or 4** splits depending on the experiment folder. Each partition is assigned an auxiliary classifier head used for local loss computation. The final classifier head is shared across all splits.
 
 ## Data Partitioning
 
@@ -43,27 +45,28 @@ Client counts evaluated: **1, 5, 10** clients.
 
 ## Project Structure
 
+Each dataset directory follows the same layout, with experiments grouped first by algorithm family (`sl` / `sfl`), then by number of splits (`split-2`, `split-3`, `split-4`), and finally by SFL version (`v1` / `v2`) where applicable.
+
 ```
 sl-fl/
 ├── cifar-10/
 │   ├── sl/
-│   │   └── sl_dsl.py          # Standard SL vs DGL on CIFAR-10
+│   │   ├── split-2/sl_dsl.py      # SL vs DGL — 2 splits
+│   │   ├── split-3/sl_dsl.py      # SL vs DGL — 3 splits
+│   │   └── split-4/sl_dsl.py      # SL vs DGL — 4 splits
 │   └── sfl/
-│       ├── v1_sfl_dsfl.py     # SFLv1 vs DSFL on CIFAR-10
-│       └── v2_sfl_dsfl.py     # SFLv2 vs DSFLv2 on CIFAR-10
-├── cifar-100/
-│   ├── sl/
-│   │   └── sl_dsl.py
-│   └── sfl/
-│       ├── v1_sfl_dsfl.py
-│       └── v2_sfl_dsfl.py
-├── tiny-200/
-│   ├── sl/
-│   │   └── sl_dsl.py
-│   └── sfl/
-│       ├── v1_sfl_dsfl.py
-│       └── v2_sfl_dsfl.py
-└── run.sh                     # SLURM job script to run all experiments
+│       ├── split-2/
+│       │   ├── v1/v1_sfl_dsfl.py  # SFLv1 vs DSFL — 2 splits
+│       │   └── v2/v2_sfl_dsfl.py  # SFLv2 vs DSFLv2 — 2 splits
+│       ├── split-3/
+│       │   ├── v1/v1_sfl_dsfl.py
+│       │   └── v2/v2_sfl_dsfl.py
+│       └── split-4/
+│           ├── v1/v1_sfl_dsfl.py
+│           └── v2/v2_sfl_dsfl.py
+├── cifar-100/                     # same structure as cifar-10/
+├── tiny-200/                      # same structure as cifar-10/
+└── run.sh                         # SLURM job script to run all experiments
 ```
 
 ## Requirements
@@ -81,7 +84,11 @@ seaborn
 
 **Single script:**
 ```bash
-python cifar-10/sl/sl_dsl.py
+# SL vs DGL — CIFAR-10, 3 splits
+python cifar-10/sl/split-3/sl_dsl.py
+
+# SFLv1 vs DSFL — CIFAR-100, 4 splits
+python cifar-100/sfl/split-4/v1/v1_sfl_dsfl.py
 ```
 
 **All experiments (SLURM):**
