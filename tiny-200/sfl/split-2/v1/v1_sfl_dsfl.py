@@ -451,7 +451,7 @@ def evaluate(model, test_loader):
 # through the cut layer.
 # ==========================================
 
-ROUNDS = 50
+ROUNDS = 100
 LOCAL_EPOCHS = 5
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
