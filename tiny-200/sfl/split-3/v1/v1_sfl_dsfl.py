@@ -80,7 +80,7 @@ class CifarResNet(object):
         self.stage_1 = self._make_layer(block, 16, layer_blocks, 1)
         self.stage_2 = self._make_layer(block, 32, layer_blocks, 2)
         self.stage_3 = self._make_layer(block, 64, layer_blocks, 2)
-        self.avgpool = nn.AvgPool2d(8)
+        self.avgpool = nn.AdaptiveAvgPool2d(1)
         self.classifier = nn.Linear(64 * block.expansion, num_classes)
 
         self.layers = [self.conv_1_3x3, self.bn_1, nn.ReLU(True)]
@@ -467,7 +467,7 @@ def train_sflv1(client_loaders, test_loader, num_splits, tracker):
     criterion = nn.CrossEntropyLoss()
 
     with torch.no_grad():
-        dummy = torch.randn(2, 3, 32, 32).to(DEVICE)
+        dummy = torch.randn(2, 3, 64, 64).to(DEVICE)
         x = dummy
         for i in range(num_splits):
             x = global_model.blocks[i](x)
@@ -597,7 +597,7 @@ def train_dsfl(client_loaders, test_loader, num_splits, tracker):
     criterion = nn.CrossEntropyLoss()
 
     with torch.no_grad():
-        dummy = torch.randn(2, 3, 32, 32).to(DEVICE)
+        dummy = torch.randn(2, 3, 64, 64).to(DEVICE)
         x = dummy
         for i in range(num_splits):
             x = global_model.blocks[i](x)
@@ -605,7 +605,7 @@ def train_dsfl(client_loaders, test_loader, num_splits, tracker):
         global_model.auxillary_nets[-1](x)
 
     with torch.no_grad():
-        dummy = torch.randn(2, 3, 32, 32).to(DEVICE)
+        dummy = torch.randn(2, 3, 64, 64).to(DEVICE)
         feat = global_model.blocks[0](dummy)
         global_model.auxillary_nets[0](feat)
 
